@@ -1,0 +1,361 @@
+---
+title: "Untitled"
+output: html_document
+---
+# Load Packages
+```{r}
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+library(plotly)
+```
+
+# Read Data
+```{r}
+Non_Motorists <-read.csv("https://data.montgomerycountymd.gov/api/views/n7fk-dce5/rows.csv?accessType=DOWNLOAD")
+
+Drivers <- read.csv('https://data.montgomerycountymd.gov/api/views/mmzv-x632/rows.csv?accessType=DOWNLOAD')
+
+Incidents <- read.csv('https://data.montgomerycountymd.gov/api/views/bhju-22kf/rows.csv?accessType=DOWNLOAD')
+```
+
+# Group Municipality and crash.Date.Time, then count the number of drivers involved in incident by day (day/month/year) 
+```{r}
+Drivers$Crash.Date.Time<-substring(as.character(Drivers$Crash.Date.Time), 1, 10)
+Drivers_1 <-Drivers %>% group_by(Municipality, Crash.Date.Time) %>% summarise(Drivers_Count = n())
+```
+
+# Group Municipality and crash.Date.Time, then count the number of incidents by day (day/month/year) 
+```{r}
+Incidents$Crash.Date.Time <-substring(as.character(Incidents$Crash.Date.Time), 1, 10)
+Incidents_1 <-Incidents %>% group_by(Municipality, Crash.Date.Time) %>% summarise(Incidents_Count = n())
+```
+
+# Merge Drivers_1和Incidents_1
+```{r}
+Drivers_Incidents <-merge(Drivers_1, Incidents_1, by.x = c("Municipality", "Crash.Date.Time"), by.y = c("Municipality", "Crash.Date.Time"))
+```
+
+# Quantify injury severity: 5 means fatal injury, 4 means suspected serious, 3 means possible injury, 2 means suspected minor, 1 means no apparent injury 
+```{r}
+Non_Motorists$Injury.Severity <-recode(Non_Motorists$Injury.Severity, "FATAL INJURY" = 5, "SUSPECTED SERIOUS INJURY" = 4, "POSSIBLE INJURY" = 3, "SUSPECTED MINOR INJURY" = 2, "NO APPARENT INJURY" = 1)
+```
+
+# Quantify weather variable: 1 means good weather, 0 means bad weather. Remove NA, Unknown, other
+```{r}
+Non_Motorists$Weather <-
+        recode(Non_Motorists$Weather, "BLOWING SNOW" = 0, "CLEAR" = 1, "CLOUDY" = 1, "FOGGY" = 0, "N/A" = -99, "OTHER" = -99, "RAINING" = 0, "SEVERE WINDS" = 0, "SLEET" = 0, "SNOW" = 0, "UNKNOWN" = -99, "WINTRY MIX" = 0)
+
+Non_Motorists <- Non_Motorists[!Non_Motorists$Weather == -99, ]
+```
+
+# Quantify light condition, 1 means good visibility, 0 means bad visibility. Remove NA, Unknown, others
+```{r}
+Non_Motorists$Light <-recode(Non_Motorists$Light, "DARK -- UNKNOWN LIGHTING" = 0, "DARK LIGHTS ON" = 0, "DARK NO LIGHTS" = 0, "DAWN" = 0, "DAYLIGHT" = 1, "DUSK" = 0, "N/A" = -99, "OTHER" = -99, "UNKNOWN" = -99)
+
+Non_Motorists <- Non_Motorists[!Non_Motorists$Light == -99, ]
+```
+
+# Quantify surface condition, 1 means good condition, 0 means bad condition Remove NA, Unknown, others
+```{r}
+Non_Motorists$Surface.Condition <-recode(Non_Motorists$Surface.Condition," " = -99,"DRY" = 1, "ICE" = 0, "N/A" = -99, "OTHER" = -99, "SLUSH" = 0, "SNOW" = 0, "UNKNOW" = -99, "WET" = 0)
+Non_Motorists <-Non_Motorists[!Non_Motorists$Surface.Condition == -99, ]
+```
+
+# Quantify traffic condition, 1 means there is traffic control, 0 means there is no. Remove NA, Unknown, others
+```{r}
+Non_Motorists$Traffic.Control <-recode(Non_Motorists$Traffic.Control, "FLASHING TRAFFIC SIGNAL" = 1, "N/A" = -99, "NO CONTROLS" = 0, "OTHER" = -99, "PERSON" = 1, "RAILWAY CROSSING DEVICE" = 1, "SCHOOL ZONE SIGN DEVICE" = 1, "STOP SIGN" = 1, "TRAFFIC SIGNAL" = 1, "UNKNOWN" = -99, "WARNING SIGN" = 1, "YIELD SIGN" = 1)
+Non_Motorists <- Non_Motorists[!Non_Motorists$Traffic.Control == -99, ]
+```
+# Quantify whether Non-Motorists is at fault, 1 at fault, 0 not. Remove NA, Unknown, others
+```{r}
+Non_Motorists$At.Fault <-recode(Non_Motorists$At.Fault,"No" = 0,"Unknown" = -99,"Yes" = 1)
+Non_Motorists <- Non_Motorists[!Non_Motorists$At.Fault == -99, ]
+```
+
+# Turn Crash.Date.Time to month/day/year format
+```{r}
+Non_Motorists$Crash.Date.Time <-substring(as.character(Non_Motorists$Crash.Date.Time), 1, 10)
+```
+
+# Form new Non-Motorist dataset
+```{r}
+Non_Motorists_1 <-Non_Motorists %>% select(Municipality, Crash.Date.Time, Injury.Severity, Weather, Light, Surface.Condition, Traffic.Control, At.Fault)
+```
+
+# Merge Non_Motorists and Drivers_Incidents dataset and remove remaining NAs
+```{r}
+Non_Motorists_new <-
+        merge(
+                Non_Motorists_1,
+                Drivers_Incidents,
+                by.x = c("Municipality", "Crash.Date.Time"),
+                by.y = c("Municipality", "Crash.Date.Time")
+          
+        )
+```
+
+```{r}
+Data <- subset(Data,Municipality!="N/A")
+```
+
+```{r}
+Data <- na.omit(Non_Motorists_new)
+```
+
+# View the final cleaned data
+```{r}
+View(Data)
+```
+
+# Add Daylight Saving Dates
+```{r}
+Data$daylight <- ifelse(
+        (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2015-08-03','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2015-11-01','%Y-%m-%d')) | (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2016-03-13','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2016-11-06','%Y-%m-%d')) |
+                (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2017-03-12','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2017-11-05','%Y-%m-%d')) |
+                (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2018-03-11','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2018-11-04','%Y-%m-%d')) |
+                (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2019-03-10','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2019-11-03','%Y-%m-%d')) |
+                (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2020-03-08','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2020-11-01','%Y-%m-%d')) |
+                (strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2021-03-14','%Y-%m-%d') | strptime(Data$Crash.Date.Time,'%m/%d/%Y')==strptime('2021-11-07','%Y-%m-%d')),1,0
+)
+```
+
+# Exploratory Data Analysis
+# The new dataset contains 10 variables，Injury.Severity, Weather, Light, Surface.Condition, Traffic.Control, At.Fault are categorical variables
+# Drivers_Count, Incidents_Count are quantitative
+# Frequency counts for categorical variables
+
+# Frequency count for Weather，0 represent bad weather，1 means good weather
+```{r}
+Data %>% 
+        count(Weather) %>% 
+        mutate(prop = prop.table(n))
+```
+
+# Frequency count for Light，1 represent good visibility，0 means bad visibility
+```{r}
+Data %>% 
+        count(Light) %>% 
+        mutate(prop = prop.table(n))
+```
+# Frequency count Surface.Condition, 1 means normal condition，0 means abnormal condition
+```{r}
+Data %>% 
+        count(Surface.Condition) %>% 
+        mutate(prop = prop.table(n))
+```
+# Frequency counts for Traffic Control, 1 means there is control，0 mean no
+```{r}
+Data %>% 
+        count(Traffic.Control) %>% 
+        mutate(prop = prop.table(n))
+```
+# Frequency count for wheather Non-Motortist is at fault, 1 means at fault，0 means not
+```{r}
+Data %>% 
+        count(At.Fault) %>% 
+        mutate(prop = prop.table(n))
+```
+# Frequency counts for injury severity
+```{r}
+Data %>% 
+        count(Injury.Severity) %>% 
+        mutate(prop = prop.table(n))
+```
+# Contingency table for the variables and injury severity, trying to find relationship
+
+# Weather and Injury severity
+```{r}
+Data %>% 
+        group_by(Injury.Severity, Weather) %>% 
+        summarize(n = n()) %>% 
+        spread(Weather, n) %>%
+        kable()
+```
+
+# Light and Injury severity
+```{r}
+Data %>% 
+        group_by(Injury.Severity, Light) %>% 
+        summarize(n = n()) %>% 
+        spread(Light, n) %>%
+        kable()
+```
+
+# Surface condition and Injury severity
+```{r}
+Data %>% 
+        group_by(Injury.Severity, Surface.Condition) %>% 
+        summarize(n = n()) %>% 
+        spread(Surface.Condition, n) %>%
+        kable()
+```
+
+# Traffic control and Injury severity
+```{r}
+Data %>% 
+        group_by(Injury.Severity, Traffic.Control) %>% 
+        summarize(n = n()) %>% 
+        spread(Traffic.Control, n) %>%
+        kable()
+```
+
+# At fault and Injury severity
+```{r}
+Data %>% 
+        group_by(Injury.Severity, At.Fault) %>% 
+        summarize(n = n()) %>% 
+        spread(At.Fault, n) %>%
+        kable()
+```
+
+# Max, Min, Average, Standard Deviation for the quantitative variables
+
+```{r}
+Data %>% 
+        select(Drivers_Count, Incidents_Count) %>%
+        summarise(n = n(), Drivers_Count_average = mean(Drivers_Count), Incidents_Count_average = mean(Incidents_Count),
+                  Drivers_Count_max = max(Drivers_Count), Incidents_Count_max = max(Incidents_Count),
+                  Drivers_Count_min = min(Drivers_Count), Incidents_Count_min = min(Incidents_Count),
+                  Drivers_Count_sd = sd(Drivers_Count), Incidents_Count_sd = sd(Incidents_Count)) 
+```
+
+# Boxplot for injury severity and incident count by day
+```{r}
+ggplot(Data, aes(x = factor(Injury.Severity, labels = c("NO ","MINOR ","POSSIBLE", "SERIOUS","FATAL")), y = Incidents_Count)) +
+        geom_boxplot(varwidth=TRUE, fill="plum") +
+        labs(title="Distribution of Incidents Count For Days by Injury Severity",
+             caption="data.montgomerycountymd.gov",
+             x="Injury Severity",
+             y="Incidents Count")
+```
+# Visibility's effect on Injury.Severity and incident count
+```{r}
+Data$Visibility <- factor(Data$Light,labels=c("Bad","Good"))
+ggplot(Data, aes(x = factor(Injury.Severity, labels = c("NO","MINOR","POSSIBLE",
+        "SERIOUS","FATAL")), y = Incidents_Count, fill=Visibility )) +
+        geom_boxplot(varwidth=TRUE) +
+        labs(title="Light Condition's Conbribution To Injury Severity and Count",
+             caption="data.montgomerycountymd.gov",
+             x="Injury Severity",
+             y="Incidents Count")
+```
+# Weather's effect on Injury.Severity and incident count
+```{r}
+Data$Climate <- factor(Data$Weather,labels=c("Bad Weather","Good Weather"))
+ggplot(Data, aes(x = factor(Injury.Severity, labels = c("NO","MINOR","POSSIBLE","SERIOUS","FATAL")), y = Incidents_Count,
+                 fill=Climate )) +
+        geom_boxplot(varwidth=TRUE) +
+        labs(title="Weather's Conbribution To Injury Severity and Count",
+             caption="data.montgomerycountymd.gov",
+             x="Injury Severity",
+             y="Incidents Count")
+```
+# At Fault's Conbribution To Injury Severity and Count
+```{r}
+Data$Fault <- factor(Data$At.Fault,labels=c("Yes","No"))
+ggplot(Data, aes(x = factor(Injury.Severity, labels = c("NO","MINOR","POSSIBLE",
+        "SERIOUS","FATAL")), y = Incidents_Count, fill=Fault )) +
+        geom_boxplot(varwidth=TRUE) +
+        labs(title="At Fault's Conbribution To Injury Severity and Count",
+             caption="data.montgomerycountymd.gov",
+             x="Injury Severity",
+             y="Incidents Count")
+```
+# Trend Analysis of the Number of Injuries, Month, and Municipality
+```{r}
+s1 <- Data%>%group_by(Municipality,Injury.Severity, strftime(strptime(Crash.Date.Time,'%m/%d/%Y'),'%m'))%>%summarise(n=n())
+colnames(s1) = c("Municipality", "Severity","time", "n")
+
+ggplot(s1, aes(time, n)) +
+        geom_point(aes(colour = Municipality)) +
+        facet_grid(factor(Severity, labels = c("NO","MINOR ","POSSIBLE", "SERIOUS","FATAL"))~.) +
+        labs(title = "Trend Analysis of the Number of Injuries, Month, and Municipality",
+             caption="data.montgomerycountymd.gov",
+             x="Month", y ="Non-motorist injuries")
+```
+
+# Number of injuries, Year, Municipality, and At Fault
+```{r}
+s2 <- Data%>%group_by(Municipality,Injury.Severity,At.Fault, strftime(strptime(Crash.Date.Time,'%m/%d/%Y'),'%Y'))%>%summarise(n=n())
+colnames(s2) = c("Municipality", "Severity","Surface","time", "n")
+
+ggplot(s2, aes(time, n))+
+        geom_point(aes(colour = Municipality)) +
+        facet_grid(factor(Surface, labels = c('YES','NO'))~factor(Severity, labels = c("NO","MINOR ","POSSIBLE ",
+                                                                                         "SERIOUS ","FATAL"))) +
+        labs(title = "Number of injuries, Year, Municipality, and At Fault",
+             caption="data.montgomerycountymd.gov",
+             x="Year", y ="Non-motorised injuries")
+```
+
+# Statistical Analysis
+
+# Using Chi-squared test，evaluate Injury Severity and categorical variables's 
+```{r}
+chisq.test(Data$Injury.Severity,Data$Weather)
+chisq.test(Data$Injury.Severity,Data$Light)
+chisq.test(Data$Injury.Severity,Data$Surface.Condition)
+chisq.test(Data$Injury.Severity,Data$Traffic.Control)
+chisq.test(Data$Injury.Severity,Data$At.Fault)
+```
+# Analysis: The p-vaule for light condition, traffic control, and at fault are smaller than 0.05, which mean they might be statistically significantly associated with injury severity.
+
+
+# Use Shapiro-Wilk normality test if Drivers and Incidents count are normally distributed
+```{r}
+shapiro.test(Data$Drivers_Count)
+shapiro.test(Data$Incidents_Count)
+```
+# Result: Both W-scores are close to 0 but p-value is less than 0.5. So they are not normally distributed. 
+
+
+# Multiple linear regression
+```{r}
+lm.mol <- lm(Injury.Severity~Weather+Light+Surface.Condition+Traffic.Control+At.Fault, data =Data)
+summary(lm.mol)
+```
+# By making injury severity as a dependent variable, the resulting R^2 value of both multiple and adjusted are between 0 and 1 (0.1162 and 0.0973), meaning there is a relatively strong correlation between injury severity and the variables. The p-value is less than 0.05 being 1.303e-05, it is statistically significant. The variables Light, At fault, and daylight are showing statistical significance.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
